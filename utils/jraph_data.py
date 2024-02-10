@@ -120,7 +120,7 @@ def get_lorenz_graph_tuples(n_samples,
 
     # otherwise, generate Lorenz data 
     if not valid_existing_simulation:
-        lorenz_data_path = f"/Users/h.lu/Documents/_code/_research lorenz code/lorenzGNN/data/test_{datetime.now()}.npz" # TODO update what path to save it to 
+        lorenz_data_path = f"/Users/miamirabelli/Desktop/GNN Research/lorenzGNN/data/test_{datetime.now()}.npz" # TODO update what path to save it to 
         run_download_lorenz96_2coupled(
             fname=lorenz_data_path, 
             K=K,

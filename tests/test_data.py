@@ -146,7 +146,8 @@ class DataTests(unittest.TestCase):
         init_buffer_samples = 100  # buffer at the beginning of the dataset to allow for the system to settle
         time_resolution = 100
         # TODO: grab this automatically (right now it needs to be manually updated if anything changes)
-        data_path = "/Users/h.lu/Documents/_code/_research lorenz code/lorenzGNN/data/test_2023-11-17 14:57:41.380103.npz"
+        # data_path = "/Users/h.lu/Documents/_code/_research lorenz code/lorenzGNN/data/test_2023-11-17 14:57:41.380103.npz"
+        data_path = "/Users/miamirabelli/Desktop/GNN Research/lorenzGNN/data/demo.npz"
 
         # generate desired dataset with train/val split and subsampled windows
         graph_tuple_dict = get_lorenz_graph_tuples(

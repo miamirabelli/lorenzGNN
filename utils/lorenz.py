@@ -20,7 +20,7 @@ import logging
 import pdb
 
 DEFAULT_TIME_RESOLUTION = 100
-DATA_DIRECTORY_PATH = "/Users/h.lu/Documents/_code/_research lorenz code/lorenzGNN/data/data_directory.json"
+DATA_DIRECTORY_PATH = "/Users/miamirabelli/Desktop/GNN Research/lorenzGNN/data/data_directory.json"
 
 
 def get_window_indices(n_samples, timestep_duration, input_steps, output_delay, 

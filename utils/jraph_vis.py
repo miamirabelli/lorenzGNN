@@ -142,6 +142,7 @@ def plot_predictions(
 
 
     checkpoint_dir = os.path.join(workdir, 'checkpoints')
+    print("Checkpoint directory:", checkpoint_dir)
     assert os.path.exists(checkpoint_dir)
 
     # samples must be overlapping and consecutive for this plot to really be interpretable the way it is meant 

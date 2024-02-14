@@ -520,8 +520,7 @@ def train_and_evaluate_with_data(
     # Create the training state.
     net = create_model(config, deterministic=False)
     state = train_state.TrainState.create(
-        apply_fn=net.apply, params=params, tx=tx
-    )
+        apply_fn=net.apply, params=params, tx=tx)
 
     # Set up checkpointing of the model.
     # The input pipeline cannot be checkpointed in its current form,
@@ -548,7 +547,10 @@ def train_and_evaluate_with_data(
         eval_all_metrics = config.eval_all_metrics
     else:
         eval_all_metrics = False
-
+    
+    # TODO: attempting error fix, hopefully it works LOL
+    eval_metrics_dict = {}
+    
     # Begin training loop.
     logging.info('Starting training.')
     train_metrics = None
@@ -723,7 +725,7 @@ def D(targets, preds):
     pred_minus_test = jnp.subtract(preds, targets)
     pred_minus_test_squared = jnp.square(pred_minus_test)
     pred_minus_test_mean = jnp.subtract(preds, jnp.mean(targets))
-    denom = jnp.add(jnp.abs(pred_minus_test_mean), jnp.abs(obs_var)) # TODO verify it was ok to change K.abs to np.abs 
+    denom = jnp.add(jnp.abs(pred_minus_test_mean), jnp.abs(obs_var))
     denom_squared = jnp.square(denom) # TODO are we supposed to use this function somewhere? 
 
     frac = jnp.true_divide(jnp.sum(pred_minus_test_squared), jnp.sum(denom))

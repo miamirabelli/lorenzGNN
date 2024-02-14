@@ -6,7 +6,7 @@ from functools import partial
 from datetime import datetime
 import os 
 
-CHECKPOINT_PATH = "/Users/h.lu/Documents/_code/_research lorenz code/lorenzGNN/experiments/tuning"
+CHECKPOINT_PATH = "/Users/miamirabelli/Desktop/GNN Research/lorenzGNN/experiments/tuning"
 
 # TODO finish this 
 def get_base_config():

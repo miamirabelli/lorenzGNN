@@ -196,5 +196,16 @@
         "n_steps": 30334,
         "resolution": 120,
         "seed": 42
+    },
+    {
+        "fname": "/Users/miamirabelli/Desktop/GNN Research/lorenzGNN/data/test_2024-02-24 12:10:00.144281.npz",
+        "K": 36,
+        "F": 8,
+        "c": 0,
+        "b": 1,
+        "h": 1,
+        "n_steps": 30334,
+        "resolution": 120,
+        "seed": 42
     }
 ]

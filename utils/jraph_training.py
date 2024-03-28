@@ -358,7 +358,7 @@ def evaluate_step_metric_suite_fn(
 
     # Get node predictions and loss 
     metric_avg, pred_nodes = rollout_metric_suite(
-        metric_funcs=[MSE, MB, ME, RMSE, CRMSE, NMB, NME, FB, FE, R, R2, D, pearson], 
+        metric_funcs=[MSE, MB, ME, RMSE, CRMSE, NMB, NME, FB, FE, R, R2, D], 
         state=state, 
         input_window_graphs=input_window_graphs, 
         target_window_graphs=target_window_graphs, 
@@ -378,7 +378,7 @@ def evaluate_step_metric_suite_fn(
         r = metric_avg["r"],
         r2 = metric_avg["r2"],
         d = metric_avg["d"],
-        pearson = metric_avg["pearson"],
+        #pearson = metric_avg["pearson"],
     ) 
 
     return eval_metrics_dict, pred_nodes
@@ -726,11 +726,10 @@ def D(targets, preds):
     pred_minus_test_squared = jnp.square(pred_minus_test)
     pred_minus_test_mean = jnp.subtract(preds, jnp.mean(targets))
     denom = jnp.add(jnp.abs(pred_minus_test_mean), jnp.abs(obs_var))
-    denom_squared = jnp.square(denom) # TODO are we supposed to use this function somewhere? 
 
     frac = jnp.true_divide(jnp.sum(pred_minus_test_squared), jnp.sum(denom))
     d = jnp.subtract(1, frac)
     return d
 
-def pearson(targets, preds):
-    return jax.scipy.stats.pearsonr(x=targets, y=preds)
+#def pearson(targets, preds):
+#    return jax.scipy.stats.pearsonr(x=targets, y=preds)

@@ -131,7 +131,12 @@ def get_lorenz_graph_tuples(n_samples,
             n_steps=simulation_steps_needed,
             resolution=time_resolution,
             seed=seed)
-
+    
+    # TODO: this is supposed to increase frequency for X1 to see if we can predict for high frequencies
+    # TODO: delete when finished with experiment
+    
+    
+    
     # load raw Lorenz data 
     t, X = load_lorenz96_2coupled(lorenz_data_path)
     # t has shape (simulation_steps_needed,)

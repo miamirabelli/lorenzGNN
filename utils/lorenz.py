@@ -95,11 +95,11 @@ def lorenz96_2coupled(X, t, K, F, c, b, h):
     
     ######## first ##########
     # boundary conditions
-    dX_dt[0] = (X[1] - X[K - 2]) * X[K - 1] - X[0] - (h * c / b) * X[K] # had a + F
-    dX_dt[1] = (X[2] - X[K - 1]) * X[0] - X[1] - (h * c / b) * X[K + 1] # had a + F
+    dX_dt[0] = (X[1] - X[K - 2]) * X[K - 1] - X[0] - (h * c / b) * X[K] + F
+    dX_dt[1] = (X[2] - X[K - 1]) * X[0] - X[1] - (h * c / b) * X[K + 1] + F
     dX_dt[K -
           1] = (X[0] - X[K - 3]) * X[K - 2] - X[K -
-                                                1] - (h * c / b) * X[K - 1] # had a + F
+                                                1] - (h * c / b) * X[K - 1] + F
     ######## second next #############
     # boundary conditions
     dX_dt[K + 0] = -c * b * (X[K + 2] - X[K + K - 1]) * X[K + 1] - c * X[K] + (
@@ -114,7 +114,7 @@ def lorenz96_2coupled(X, t, K, F, c, b, h):
     # Then the general case
     for i in range(2, K - 1):
         dX_dt[i] = (X[i + 1] - X[i - 2]) * X[i - 1] - X[i] - (h * c /
-                                                              b) * X[i + K] # had a + F
+                                                              b) * X[i + K] + F
     # Return the state derivatives
     ######## second next #############################
     for i in range(K + 1, K + K - 2):

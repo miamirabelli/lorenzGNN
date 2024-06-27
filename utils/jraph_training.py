@@ -159,7 +159,8 @@ def rollout_loss(state: train_state.TrainState,
 
     curr_input_window_graphs = input_window_graphs
     pred_nodes = []
-    total_loss = 0
+    x1_total_loss = 0
+    x2_total_loss = 0
     for i in range(n_rollout_steps):
         pred_graphs_list = state.apply_fn(state.params, curr_input_window_graphs, rngs=rngs) 
         pred_graph = pred_graphs_list[0]
@@ -169,16 +170,44 @@ def rollout_loss(state: train_state.TrainState,
 
         preds = pred_graph.nodes
         targets = target_window_graphs[i].nodes
-    
-        loss = MSE(targets, preds)
+
+        def get_layer_targets_preds(targets, preds, layer):
+            """Splits the numpy array of nodes into X1 or X2 nodes, given the desired layer
+                args:
+                   nodes: ndarray
+                   layer: 1 for X1 or 2 for X2
+                returns:
+                  split_preds: ndarray of the x_layer predictions
+                   split_targets: ndarray of the x_layer targets """
+            assert layer == 1 or layer == 2
+            split_targets = []
+            split_preds = []
+            for target, pred in zip(targets, preds):
+                split_targets.append(target[layer-1])
+                split_preds.append(pred[layer-1])
+
+            # casting to jnp array for metrics purposes
+            split_targets = jnp.array(split_targets)
+            split_preds = jnp.array(split_preds)
+            return split_targets, split_preds
+        
+        x1_targets, x1_preds = get_layer_targets_preds(targets, preds, 1)
+        x2_targets, x2_preds = get_layer_targets_preds(targets, preds, 2)
+
+        # used to calculate separate losses for x1 and x2
+        x1_loss = MSE(x1_targets, x1_preds)
+        x2_loss = MSE(x2_targets, x2_preds) 
 
         pred_nodes.append(preds) # Side-effects aren't allowed in JAX-transformed functions, and appending to a list is a side effect ??
 
-        total_loss += loss
+        x1_total_loss += x1_loss
+        x2_total_loss += x2_loss
 
-    avg_loss = total_loss / n_rollout_steps
 
-    return avg_loss, pred_nodes
+    x1_avg_loss = x1_total_loss / n_rollout_steps
+    x2_avg_loss = x2_total_loss / n_rollout_steps
+
+    return x1_avg_loss, x2_avg_loss, pred_nodes
 
 
 def rollout_metric_suite(
@@ -293,6 +322,8 @@ class EvalMetricsSuite(metrics.Collection):
 @flax.struct.dataclass
 class TrainMetrics(metrics.Collection):
     loss: metrics.Average.from_output('loss')
+    x1_loss: metrics.Average.from_output('x1_loss')
+    x2_loss: metrics.Average.from_output('x2_loss')
 
 
 def train_step_fn(
@@ -329,19 +360,23 @@ def train_step_fn(
         curr_state = state.replace(params=params) # create a new state object so that we can pass the whole thing into the one_step_loss function. we do this so that we can keep track of the original state's apply_fn() and a custom param together (theoretically the param argument in this function doesn't need to be the same as the default state's param)
 
         # Compute loss.
-        loss, pred_nodes = rollout_loss(
+        x1_loss, x2_loss, pred_nodes = rollout_loss(
            state=curr_state, input_window_graphs=input_window_graphs, 
            target_window_graphs=target_window_graphs, n_rollout_steps=n_rollout_steps, 
-           rngs=rngs,
-           )
-        return loss, pred_nodes
+           rngs=rngs)
+        
+        total_loss = x1_loss + x2_loss
+        loss_metrics = {'loss': total_loss, 'x1_loss': x1_loss, 'x2_loss': x2_loss}
+        return total_loss, (loss_metrics, pred_nodes)
         # TODO trace where rngs is used, this is unclear. dropout? 
-
+    
     grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
-    (loss, pred_nodes), grads = grad_fn(state.params, input_window_graphs, target_window_graphs)
+    (loss, (loss_metrics, pred_nodes)), grads = grad_fn(state.params, input_window_graphs, target_window_graphs)
     state = state.apply_gradients(grads=grads) # update params in the state 
 
-    metrics_update = TrainMetrics.single_from_model_output(loss=loss)
+    metrics_update = TrainMetrics.single_from_model_output(loss=loss,
+                                                           x1_loss=loss_metrics['x1_loss'],
+                                                           x2_loss=loss_metrics['x2_loss'])
 
     return state, metrics_update, pred_nodes
 
@@ -395,12 +430,13 @@ def evaluate_step_fn(
 
     # Get node predictions and loss 
 
-    loss, pred_nodes = rollout_loss(state=state, 
+    x1_loss, x2_loss, pred_nodes = rollout_loss(state=state, 
                                     input_window_graphs=input_window_graphs, 
                                     target_window_graphs=target_window_graphs, 
                                     n_rollout_steps=n_rollout_steps, rngs=None)
-
-    eval_metrics = EvalMetrics.single_from_model_output(loss=loss)
+    
+    total_loss = x1_loss + x2_loss
+    eval_metrics = EvalMetrics.single_from_model_output(loss=total_loss)
 
     return eval_metrics, pred_nodes
 
@@ -548,7 +584,6 @@ def train_and_evaluate_with_data(
     else:
         eval_all_metrics = False
     
-    # TODO: attempting error fix, hopefully it works LOL
     eval_metrics_dict = {}
     
     # Begin training loop.
@@ -660,7 +695,7 @@ def ME(targets,preds):
 
 # root means square error
 def RMSE(targets, preds):
-    RMS = jnp.sqrt(jnp.mean(jnp.square(jnp.subtract(preds, targets))))
+    RMS = jnp.sqrt(MSE(targets, preds))
     return RMS
 
 # centered root means square error

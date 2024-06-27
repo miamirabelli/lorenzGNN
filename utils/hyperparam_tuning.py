@@ -80,20 +80,14 @@ def objective(trial, datasets):
 def get_data_config():
     config = get_base_config()
 
-    config.n_samples=100
+    config.n_samples=5000
     config.input_steps=1
-    config.output_delay=8 # predict 24 hrs into the future 
+    config.output_delay=0 # predict 0 hours into the future
     config.output_steps=4
-    config.timestep_duration=3 # equivalent to 3 hours
-    # note a 3 hour timestep resolution would be 5*24/3=40
-    # if the time_resolution is 120, then a sampling frequency of 3 would achieve a 3 hour timestep 
-    config.sample_buffer = -1 * (config.input_steps + config.output_delay + config.output_steps - 1) # negative buffer so that our sample input are continuous (i.e. the first sample would overlap a bit with consecutive samples) 
-        # number of timesteps strictly between the end 
-        # of one full sample and the start of the next sample
-    config.time_resolution=120 # the number of 
-                # raw data points generated per time unit, equivalent to the 
-                # number of data points generated per 5 days in the simulation
-    config.init_buffer_samples=100
+    config.timestep_duration= 3
+    config.sample_buffer=-1 * (config.input_steps + config.output_delay + config.output_steps - 1) # negative buffer so that our sample input are continuous (i.e. the first sample would overlap a bit with consecutive samples) 
+    config.time_resolution=120
+    config.init_buffer_samples=0
     config.train_pct=0.7
     config.val_pct=0.2
     config.test_pct=0.1
@@ -104,6 +98,8 @@ def get_data_config():
     config.h=1
     config.seed=42
     config.normalize=True
+    config.fully_connected_edges=False
+    config.max_checkpts_to_keep=None # none means all
 
     return config
 

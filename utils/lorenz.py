@@ -172,19 +172,18 @@ def run_lorenz96_2coupled(
     # Perturbation
     X0[random.randint(0, K) -
        1] = X0[random.randint(0, K) - 1] + random.uniform(0, .01)
-
-    simulation_duration = n_steps / resolution # number of time units
-    t = np.arange(
-        0.0, simulation_duration, 1 / resolution) # indices of all time steps
+    
+    full_steps = n_steps * 4  # quadrupling the number of steps to account for model spin-up
+    simulation_duration = full_steps / resolution # number of all time units
+    full_time = np.arange(0.0, simulation_duration, 1 /resolution) # indices of all time steps
 
     logging.info('starting integration')
-    X = odeint(lorenz96_2coupled,
-               X0,
-               t,
-               args=(K, F, c, b, h),
-               ixpr=True)
+    X = odeint(lorenz96_2coupled, X0, full_time, args=(K, F, c, b, h), ixpr=True)
+    X = X[(full_steps-n_steps):]  # removes the first n_steps from training data, accounting for model spin_up
+    t = np.arange(0.0, n_steps/resolution, 1/resolution) # cuts down time to only the non-spin up time
 
     return t, X, F, K, n_steps
+
 
 def run_download_lorenz96_2coupled(
         fname, 

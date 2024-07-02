@@ -6,6 +6,8 @@ tutorial*
 outputs/*
 */outputs/*
 experiments/tuning/configs/*
+data/tests/outputs
+*.npz
 
 # VScode
 .vscode/*

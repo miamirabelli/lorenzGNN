@@ -33,7 +33,7 @@ def get_lorenz_graph_tuples(n_samples,
                             seed=42,
                             normalize=False,
                             fully_connected_edges=True,
-                            # data_path=None,
+                            batch_size=32,
                             ):
     """ Generated data using Lorenz96 and splits data into train/val/test. 
 
@@ -86,7 +86,6 @@ def get_lorenz_graph_tuples(n_samples,
     # use error term due to float errors
 
     # compute the number of total "raw" steps in the simulation we need
-    # TODO test if this section is correct 
     total_samples = n_samples + init_buffer_samples
 
     all_input_window_indices, all_target_window_indices = get_window_indices(
@@ -131,12 +130,7 @@ def get_lorenz_graph_tuples(n_samples,
             n_steps=simulation_steps_needed,
             resolution=time_resolution,
             seed=seed)
-    
-    # TODO: this is supposed to increase frequency for X1 to see if we can predict for high frequencies
-    # TODO: delete when finished with experiment
-    
-    
-    
+
     # load raw Lorenz data 
     t, X = load_lorenz96_2coupled(lorenz_data_path)
     # t has shape (simulation_steps_needed,)
@@ -193,7 +187,39 @@ def get_lorenz_graph_tuples(n_samples,
     if normalize:
         graph_tuple_dict = normalize_lorenz96_2coupled(graph_tuple_dict)
 
-    return graph_tuple_dict
+    def batch_graphs(inputs, targets, num_windows, batch_size):
+        """
+        batches graphs into size of batch_size (WILL IMRPOVE DOCSTRING LATER)
+
+        arguments: graphs: list of graphtuples, ie graph_tuple_dict[split]['inputs']
+        """
+        num_batches = (num_windows + batch_size - 1) // batch_size  # Ensure rounding up to capture all data
+        
+        batched_inputs = []
+        batched_targets = []
+        for i in range(num_batches):
+            start = i * batch_size
+            end = min((i + 1) * batch_size, num_windows)  # If we run out of data before batch size, just go to end of data
+            
+            # Batch the graphs for each window separately
+            current_batch_inputs = [jraph.batch(window) for window in inputs[start:end]]
+            current_batch_targets = [jraph.batch(window) for window in targets[start:end]]
+
+            batched_inputs.append(current_batch_inputs)
+            batched_targets.append(current_batch_targets)
+
+        return batched_inputs, batched_targets
+
+    
+    batched_graph_tuple_dict = {}
+    for split in ['train', 'val', 'test']:
+        inputs = graph_tuple_dict[split]['inputs']
+        targets = graph_tuple_dict[split]['targets']
+        num_windows = len(inputs) # chosen arbitrarily
+        split_input_batch, split_target_batch = batch_graphs(inputs, targets, num_windows, batch_size)
+        batched_graph_tuple_dict[split] = {'inputs': split_input_batch, 'targets': split_target_batch}
+
+    return graph_tuple_dict, batched_graph_tuple_dict
 
 
 @partial(jax.jit, static_argnames=["K", "fully_connected_edges"])
@@ -263,7 +289,6 @@ def print_graph_fts(graph: jraph.GraphsTuple):
     print(f'Node features shape: {graph.nodes.shape}')
     print(f'Edge features shape: {graph.edges.shape}')    
     print(f'Global features shape: {graph.globals.shape}')
-
 
 
 def convert_jraph_to_networkx_graph(jraph_graph: jraph.GraphsTuple) -> nx.Graph:

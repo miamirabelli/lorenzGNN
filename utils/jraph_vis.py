@@ -153,7 +153,7 @@ def plot_predictions(
     # Get datasets, organized by split.
     if datasets is None:
         logging.info('Generating datasets from config because none provided.')
-        datasets = create_dataset(config)
+        datasets, _ = create_dataset(config)
 
     plot_set = datasets[plot_mode]
     input_data = plot_set['inputs']

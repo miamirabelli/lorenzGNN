@@ -1,12 +1,56 @@
 [
     {
-        "fname": "/Users/miamirabelli/Desktop/GNN Research/lorenzGNN/data/test_2024-06-27 11:58:25.937204.npz",
+        "fname": "/Users/miamirabelli/Desktop/GNN Research/lorenzGNN/data/test_2024-07-01 15:08:55.488086.npz",
         "K": 36,
         "F": 8,
         "c": 10,
         "b": 10,
         "h": 1,
-        "n_steps": 15010,
+        "n_steps": 15025,
+        "resolution": 120,
+        "seed": 42
+    },
+    {
+        "fname": "/Users/miamirabelli/Desktop/GNN Research/lorenzGNN/data/test_2024-07-01 15:16:22.329518.npz",
+        "K": 36,
+        "F": 8,
+        "c": 10,
+        "b": 10,
+        "h": 1,
+        "n_steps": 30010,
+        "resolution": 120,
+        "seed": 42
+    },
+    {
+        "fname": "/Users/miamirabelli/Desktop/GNN Research/lorenzGNN/data/test_2024-07-02 13:14:38.651728.npz",
+        "K": 4,
+        "F": 8,
+        "c": 10,
+        "b": 10,
+        "h": 1,
+        "n_steps": 70,
+        "resolution": 120,
+        "seed": 42
+    },
+    {
+        "fname": "/Users/miamirabelli/Desktop/GNN Research/lorenzGNN/data/test_2024-07-02 13:15:24.954139.npz",
+        "K": 14,
+        "F": 8,
+        "c": 10,
+        "b": 10,
+        "h": 1,
+        "n_steps": 70,
+        "resolution": 120,
+        "seed": 42
+    },
+    {
+        "fname": "/Users/miamirabelli/Desktop/GNN Research/lorenzGNN/data/test_2024-07-02 13:15:41.247231.npz",
+        "K": 6,
+        "F": 8,
+        "c": 10,
+        "b": 10,
+        "h": 1,
+        "n_steps": 70,
         "resolution": 120,
         "seed": 42
     }

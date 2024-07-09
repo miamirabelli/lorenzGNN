@@ -206,22 +206,32 @@ def get_lorenz_graph_tuples(n_samples,
             current_batch_inputs = [jraph.batch(window) for window in inputs[start:end]]
             current_batch_targets = [jraph.batch(window) for window in targets[start:end]]
 
+            # Pad the batched graphs to ensure they have the same size
+            temp_input = jraph.batch(current_batch_inputs)
+            temp_target = jraph.batch(current_batch_targets)
+
             # Determine the padding sizes
-            max_nodes = max(graph.nodes.shape[0] for graph in current_batch_inputs)
-            max_edges = max(graph.edges.shape[0] for graph in current_batch_inputs)
-            
+            input_pad_nodes_to = jnp.sum(temp_input.n_node) + 1
+            target_pad_nodes_to = jnp.sum(temp_target.n_node) + 1
+
+            input_pad_edges_to = jnp.sum(temp_input.n_edge) + 1
+            target_pad_edges_to = jnp.sum(temp_target.n_edge) + 1
+
+            input_pad_graphs_to = temp_input.n_node.shape[0] + 1
+            target_pad_graphs_to = temp_target.n_node.shape[0] + 1
+
             # Pad the batched graphs to ensure they have the same size
             padded_inputs = jraph.pad_with_graphs(
-                jraph.batch(current_batch_inputs),
-                n_node=max_nodes,
-                n_edge=max_edges,
-                n_graph=len(current_batch_inputs)
+                temp_input,
+                n_node=input_pad_nodes_to,
+                n_edge=input_pad_edges_to,
+                n_graph=input_pad_graphs_to
             )
             padded_targets = jraph.pad_with_graphs(
-                jraph.batch(current_batch_targets),
-                n_node=max_nodes,
-                n_edge=max_edges,
-                n_graph=len(current_batch_targets)
+                temp_target,
+                n_node=target_pad_nodes_to,
+                n_edge=target_pad_edges_to,
+                n_graph=target_pad_graphs_to
             )
 
             batched_inputs.append(padded_inputs)

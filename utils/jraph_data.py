@@ -211,6 +211,7 @@ def get_lorenz_graph_tuples(n_samples,
             temp_target = jraph.batch(current_batch_targets)
 
             # Determine the padding sizes
+            # Add 1 since we need at least one padding node for pad_with_graphs.
             input_pad_nodes_to = jnp.sum(temp_input.n_node) + 1
             target_pad_nodes_to = jnp.sum(temp_target.n_node) + 1
 

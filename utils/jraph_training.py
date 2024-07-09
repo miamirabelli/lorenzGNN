@@ -204,7 +204,6 @@ def rollout_loss(state: train_state.TrainState,
         x1_total_loss += x1_loss
         x2_total_loss += x2_loss
 
-
     x1_avg_loss = x1_total_loss / n_rollout_steps
     x2_avg_loss = x2_total_loss / n_rollout_steps
 
@@ -365,13 +364,9 @@ def train_step_fn(
             total_loss = x1_loss + x2_loss
             return total_loss, x1_loss, x2_loss
         
-        in_axes = (
-            jraph.GraphsTuple(nodes=0, edges=0, receivers=None, senders=None, globals=None, n_node=None, n_edge=None),
-            jraph.GraphsTuple(nodes=0, edges=0, receivers=None, senders=None, globals=None, n_node=None, n_edge=None))
-        
         # applies the loss fn to every window in the batches
         batch_losses, batch_x1_losses, batch_x2_losses, batch_pred_nodes = jax.vmap(
-            lambda x, y: compute_loss(x, y), in_axes=in_axes)(input_batch_graphs, target_batch_graphs)
+            lambda x, y: compute_loss(x, y))(input_batch_graphs, target_batch_graphs)
 
         total_loss = jnp.mean(batch_losses)
         total_x1_loss = jnp.mean(batch_x1_losses)
@@ -530,15 +525,16 @@ def train_and_evaluate(
     """
     # Get datsets. 
     logging.info('Obtaining datasets.')
-    datasets = create_dataset(config)
+    window_datasets, batched_datasets = create_dataset(config)
 
     return train_and_evaluate_with_data(
-        config=config, workdir=workdir, datasets=datasets, trial=trial)
+        config=config, workdir=workdir, window_datasets=window_datasets, batched_datasets=batched_datasets, trial=trial)
  
 
 def train_and_evaluate_with_data(
     config: ml_collections.ConfigDict, workdir: str, 
-    datasets: Dict[str, Dict[str, Iterable[jraph.GraphsTuple]]], 
+    window_datasets: Dict[str, Dict[str, Iterable[jraph.GraphsTuple]]],
+    batched_datasets,
     trial: Optional[optuna.trial.Trial] = None,
 ) -> Tuple[train_state.TrainState, TrainMetrics, EvalMetrics]:
     """Execute model training and evaluation loop.
@@ -561,7 +557,7 @@ def train_and_evaluate_with_data(
     writer.write_hparams(config.to_dict())
 
     # Get datasets, organized by split.
-    train_set = datasets['train']
+    train_set = batched_datasets['train']
     input_data = train_set['inputs']
     target_data = train_set['targets']
     n_rollout_steps = config.output_steps
@@ -570,7 +566,8 @@ def train_and_evaluate_with_data(
     logging.info('Initializing network.')
     rng = jax.random.key(0)
     rng, init_rng = jax.random.split(rng)
-    sample_input_window = input_data[0]
+    # inintialize data with the window dataset
+    sample_input_window = window_datasets['train']['inputs'][0]
     init_net = create_model(config, deterministic=True)
     params = jax.jit(init_net.init)(init_rng, sample_input_window)
     parameter_overview.log_parameter_overview(params) # logs to logging.info
@@ -623,6 +620,7 @@ def train_and_evaluate_with_data(
 
         # iterate over data
         # right now we don't have batching so we just loop over individual windows in the dataset
+        # NOTE: GIRL WE HAVE BATCHING NOW!
         for (input_batch_graphs, target_batch_graphs) in zip(
             input_data, target_data):
             # Split PRNG key, to ensure different 'randomness' for every step.

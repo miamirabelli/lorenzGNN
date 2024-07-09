@@ -202,13 +202,36 @@ def get_lorenz_graph_tuples(n_samples,
             end = min((i + 1) * batch_size, num_windows)  # If we run out of data before batch size, just go to end of data
             
             # Batch the graphs for each window separately
+            # TODO: maybe figure out way to avoid this if we only have 1 timestep per window?
             current_batch_inputs = [jraph.batch(window) for window in inputs[start:end]]
             current_batch_targets = [jraph.batch(window) for window in targets[start:end]]
 
-            batched_inputs.append(current_batch_inputs)
-            batched_targets.append(current_batch_targets)
+            # Determine the padding sizes
+            max_nodes = max(graph.nodes.shape[0] for graph in current_batch_inputs)
+            max_edges = max(graph.edges.shape[0] for graph in current_batch_inputs)
+            
+            # Pad the batched graphs to ensure they have the same size
+            padded_inputs = jraph.pad_with_graphs(
+                jraph.batch(current_batch_inputs),
+                n_node=max_nodes,
+                n_edge=max_edges,
+                n_graph=len(current_batch_inputs)
+            )
+            padded_targets = jraph.pad_with_graphs(
+                jraph.batch(current_batch_targets),
+                n_node=max_nodes,
+                n_edge=max_edges,
+                n_graph=len(current_batch_targets)
+            )
 
-        return batched_inputs, batched_targets
+            batched_inputs.append(padded_inputs)
+            batched_targets.append(padded_targets)
+
+        # stacking the batched graphs in order to be used in jax.vmap()
+        stacked_batched_inputs = jax.tree_map(lambda *args: jnp.stack(args), *batched_inputs)
+        stacked_batched_targets = jax.tree_map(lambda *args: jnp.stack(args), *batched_targets)
+
+        return stacked_batched_inputs, stacked_batched_targets
 
     
     batched_graph_tuple_dict = {}

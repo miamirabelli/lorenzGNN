@@ -363,11 +363,15 @@ def train_step_fn(
                 target_window_graphs=target_window_graphs, n_rollout_steps=n_rollout_steps, 
                 rngs=rngs)
             total_loss = x1_loss + x2_loss
-            return total_loss, x1_loss, x2_loss, pred_nodes
+            return total_loss, x1_loss, x2_loss
+        
+        in_axes = (
+            jraph.GraphsTuple(nodes=0, edges=0, receivers=None, senders=None, globals=None, n_node=None, n_edge=None),
+            jraph.GraphsTuple(nodes=0, edges=0, receivers=None, senders=None, globals=None, n_node=None, n_edge=None))
         
         # applies the loss fn to every window in the batches
         batch_losses, batch_x1_losses, batch_x2_losses, batch_pred_nodes = jax.vmap(
-            lambda x, y: compute_loss(x, y), in_axes=[(1, 1, 1, 1, None, None, None), (1, 1, 1, 1, None, None, None)])(input_batch_graphs, target_batch_graphs)
+            lambda x, y: compute_loss(x, y), in_axes=in_axes)(input_batch_graphs, target_batch_graphs)
 
         total_loss = jnp.mean(batch_losses)
         total_x1_loss = jnp.mean(batch_x1_losses)

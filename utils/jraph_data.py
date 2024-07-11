@@ -203,8 +203,10 @@ def get_lorenz_graph_tuples(n_samples,
             
             # Batch the graphs for each window separately
             # TODO: maybe figure out way to avoid this if we only have 1 timestep per window?
-            current_batch_inputs = [jraph.batch(window) for window in inputs[start:end]]
-            current_batch_targets = [jraph.batch(window) for window in targets[start:end]]
+            current_batch_inputs = [[window] for window in inputs[start:end]]
+            current_batch_targets = [[window] for window in targets[start:end]]
+            print("len curr batch inputs:", len(current_batch_inputs))
+            print(current_batch_inputs[0])
 
             # all batches will be the same size EXCEPT the last one,
             # if we ran out of windows before the batch size. therefore, we need to pad the last graph

@@ -155,8 +155,15 @@ def rollout_loss(state: train_state.TrainState,
     """
     # TODO: not urgent, but this could be refactored to call the rollout function
     # TODO: theoretically n_rollout_steps can be eliminated and we just base the rollout on the size of the target_graphs list. however, for now we are passing in n_rollout_steps because i don't know how else we can do the jax jit with argnames 
+    print("blank", len(input_window_graphs))
+    print("[0]", len(input_window_graphs[0]))
+    print("[0][0]", len(input_window_graphs[0][0]))
+    print(type(input_window_graphs))
+    print(input_window_graphs)
+    print(input_window_graphs[0])
+
     assert n_rollout_steps > 0
-    assert len(target_window_graphs) == n_rollout_steps, (len(target_window_graphs), n_rollout_steps)
+    # assert len(target_window_graphs[0][0]) == n_rollout_steps, (len(target_window_graphs[0]), n_rollout_steps)
 
     curr_input_window_graphs = input_window_graphs
     pred_nodes = []
@@ -349,34 +356,40 @@ def train_step_fn(
         #     indicates the number of rollout steps that should be performed
         rngs (dict): rngs where the key of the dict denotes the rng use 
     """
-    assert n_rollout_steps > 0
 
     def loss_fn(params, input_batch_graphs, target_batch_graphs):
         curr_state = state.replace(params=params) # create a new state object so that we can pass the whole thing into the one_step_loss function. we do this so that we can keep track of the original state's apply_fn() and a custom param together (theoretically the param argument in this function doesn't need to be the same as the default state's param)
-        # compute loss by window
 
-        def compute_loss(input_window_graphs, target_window_graphs):
-            # Compute loss.
-            x1_loss, x2_loss, pred_nodes = rollout_loss(
-                state=curr_state, input_window_graphs=input_window_graphs, 
-                target_window_graphs=target_window_graphs, n_rollout_steps=n_rollout_steps, 
+        num_batches = len(input_batch_graphs) # arbitrarily chosen
+        # initialize storage for batch data
+        batch_losses = jnp.zeros(num_batches)
+        batch_x1_losses = jnp.zeros(num_batches)
+        batch_x2_losses = jnp.zeros(num_batches)
+        batch_pred_nodes = jnp.zeros(num_batches)
+
+        for i in range(num_batches):
+            # compute loss by window
+            window_x1_loss, window_x2_loss, window_pred_nodes = rollout_loss(
+                state=curr_state, input_window_graphs=input_batch_graphs[i], 
+                target_window_graphs=target_batch_graphs[i], n_rollout_steps=n_rollout_steps, 
                 rngs=rngs)
-            
-            total_loss = x1_loss + x2_loss
-            return total_loss, x1_loss, x2_loss, pred_nodes
+            window_total_loss = window_x1_loss + window_x2_loss
 
-        batch_losses, batch_x1_losses, batch_x2_losses, batch_pred_nodes = jax.vmap(
-            lambda x, y: compute_loss(x, y))(input_batch_graphs, target_batch_graphs)
-
+            # add window values to jnp list of losses
+            batch_losses = batch_losses.at[i].set(window_total_loss)
+            batch_x1_losses = batch_x1_losses.at[i].set(window_x1_loss)
+            batch_x2_losses = batch_x2_losses.at[i].set(window_x2_loss)
+            batch_pred_nodes = batch_pred_nodes.at[i].set(window_pred_nodes)
+        
+        # average metrics for batch
         total_loss = jnp.mean(batch_losses)
         total_x1_loss = jnp.mean(batch_x1_losses)
         total_x2_loss = jnp.mean(batch_x2_losses)
-        
+
         loss_metrics = {'loss': total_loss, 'x1_loss': total_x1_loss, 'x2_loss': total_x2_loss}
         return total_loss, (loss_metrics, batch_pred_nodes)
-    
+
     grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
-    print(type(state))
     (loss, (loss_metrics, pred_nodes)), grads = grad_fn(state.params, input_batch_graphs, target_batch_graphs)
     state = state.apply_gradients(grads=grads) # update params in the state 
 
@@ -627,8 +640,8 @@ def train_and_evaluate_with_data(
             )
         
         # Vectorize batched_step_fn over batches.
-        vmap_step_fn = jax.vmap(batch_step_fn, in_axes=(None, 0, 0, None), out_axes=(0, 0, 0))
-        state, metrics_updates, _ = vmap_step_fn(params, input_batch_graphs, target_batch_graphs, rng)
+        vmap_step_fn = jax.vmap(batch_step_fn, in_axes=(None, 0, 0, 0), out_axes=(0, 0, 0))
+        state, metrics_updates, _ = vmap_step_fn(state, input_batch_graphs, target_batch_graphs, rng)
         
         # Average metrics and handle potential NaNs.
         metrics_update = jax.tree_util.tree_map(lambda x: x.mean(), metrics_updates)
@@ -640,7 +653,7 @@ def train_and_evaluate_with_data(
         
         return state, metrics_update
     
-    num_batches = len(input_data[0])
+    num_batches = len(input_data[0][0])
     batch_rng_keys = jax.random.split(rng, num_batches)    # each batch gets a rng key
 
     for epoch in range(init_epoch, config.epochs):

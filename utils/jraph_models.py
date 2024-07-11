@@ -116,8 +116,7 @@ class MLPBlock(nn.Module):
             update_global_fn=update_global_fn,
         )
 
-        print("hello")
-        print(type(input_graph))
+        print("input graph type:", type(input_graph))
         print(input_graph)
         processed_graphs = graph_net(input_graph)
         # revert edge features to their original values

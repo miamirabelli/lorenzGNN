@@ -206,56 +206,21 @@ def get_lorenz_graph_tuples(n_samples,
             current_batch_inputs = [jraph.batch(window) for window in inputs[start:end]]
             current_batch_targets = [jraph.batch(window) for window in targets[start:end]]
 
-            # Pad the batched graphs to ensure they have the same size
-            temp_input = jraph.batch(current_batch_inputs)
-            temp_target = jraph.batch(current_batch_targets)
-
             # all batches will be the same size EXCEPT the last one,
             # if we ran out of windows before the batch size. therefore, we need to pad the last graph
             if (end - start != batch_size):
                 print("made it to the last graph")
                 break
-                # TODO: figure out padding
             
-                # print("last graph", start, end)
-                # # Determine the padding sizes
-                # # Add 1 since we need at least one padding node for pad_with_graphs.
-                # input_pad_nodes_to = jnp.sum(temp_input.n_node) + 1
-                # target_pad_nodes_to = jnp.sum(temp_target.n_node) + 1
-
-                # input_pad_edges_to = jnp.sum(temp_input.n_edge)
-                # target_pad_edges_to = jnp.sum(temp_target.n_edge)
-
-                # input_pad_graphs_to = len(current_batch_inputs)
-                # target_pad_graphs_to = len(current_batch_targets)
-
-                # print("pad graphs size:", input_pad_graphs_to)
-                # print("node shape:", temp_input.n_node.shape[0])
-
-                # # Pad the batched graphs to ensure they have the same size
-                # temp_input = jraph.pad_with_graphs(
-                #     temp_input,
-                #     n_node=input_pad_nodes_to,
-                #     n_edge=input_pad_edges_to,
-                #     n_graph=input_pad_graphs_to
-                # )
-                # temp_target = jraph.pad_with_graphs(
-                #     temp_target,
-                #     n_node=target_pad_nodes_to,
-                #     n_edge=target_pad_edges_to,
-                #     n_graph=target_pad_graphs_to
-                # )
-
-            batched_inputs.append(temp_input)
-            batched_targets.append(temp_target)
+            batched_inputs.append(current_batch_inputs)
+            batched_targets.append(current_batch_targets)
 
         # stacking the batched graphs in order to be used in jax.vmap()
         stacked_batched_inputs = jax.tree_map(lambda *args: jnp.stack(args), *batched_inputs)
         stacked_batched_targets = jax.tree_map(lambda *args: jnp.stack(args), *batched_targets)
 
-        return stacked_batched_inputs, stacked_batched_targets
+        return stacked_batched_inputs, stacked_batched_targets      
 
-    
     batched_graph_tuple_dict = {}
     for split in ['train', 'val', 'test']:
         inputs = graph_tuple_dict[split]['inputs']

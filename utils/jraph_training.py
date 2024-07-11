@@ -353,18 +353,18 @@ def train_step_fn(
 
     def loss_fn(params, input_batch_graphs, target_batch_graphs):
         curr_state = state.replace(params=params) # create a new state object so that we can pass the whole thing into the one_step_loss function. we do this so that we can keep track of the original state's apply_fn() and a custom param together (theoretically the param argument in this function doesn't need to be the same as the default state's param)
-
         # compute loss by window
+
         def compute_loss(input_window_graphs, target_window_graphs):
             # Compute loss.
-            x1_loss, x2_loss, _ = rollout_loss(
+            x1_loss, x2_loss, pred_nodes = rollout_loss(
                 state=curr_state, input_window_graphs=input_window_graphs, 
                 target_window_graphs=target_window_graphs, n_rollout_steps=n_rollout_steps, 
                 rngs=rngs)
+            
             total_loss = x1_loss + x2_loss
-            return total_loss, x1_loss, x2_loss
-        
-        # applies the loss fn to every window in the batches
+            return total_loss, x1_loss, x2_loss, pred_nodes
+
         batch_losses, batch_x1_losses, batch_x2_losses, batch_pred_nodes = jax.vmap(
             lambda x, y: compute_loss(x, y))(input_batch_graphs, target_batch_graphs)
 
@@ -376,6 +376,7 @@ def train_step_fn(
         return total_loss, (loss_metrics, batch_pred_nodes)
     
     grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
+    print(type(state))
     (loss, (loss_metrics, pred_nodes)), grads = grad_fn(state.params, input_batch_graphs, target_batch_graphs)
     state = state.apply_gradients(grads=grads) # update params in the state 
 
@@ -588,7 +589,7 @@ def train_and_evaluate_with_data(
                                  max_to_keep=config.max_checkpts_to_keep)
     state = ckpt.restore_or_initialize(state)
     initial_step = int(state.step) # state.step is 0-indexed 
-    init_epoch = initial_step // len(input_data) # 0-indexed 
+    init_epoch = initial_step // len(input_data[0]) # 0-indexed 
 
     # Create the evaluation state, corresponding to a deterministic model.
     eval_net = create_model(config, deterministic=True)
@@ -611,49 +612,57 @@ def train_and_evaluate_with_data(
     # Begin training loop.
     logging.info('Starting training.')
     train_metrics = None
-    # for step in range(initial_step, num_train_steps + 1):
-        # epoch = step % len(train_set['inputs'])
     
     # note step is 0-indexed 
     step = initial_step
+
+    def batched_train_step(state, input_batch_graphs, target_batch_graphs, rng):
+        def batch_step_fn(state, input_graphs, target_graphs, rng):
+            return train_step(
+                state=state,
+                n_rollout_steps=n_rollout_steps,
+                input_batch_graphs=input_graphs,
+                target_batch_graphs=target_graphs,
+                rngs={'dropout': rng},
+            )
+        
+        # Vectorize batched_step_fn over batches.
+        vmap_step_fn = jax.vmap(batch_step_fn, in_axes=(None, 0, 0, None), out_axes=(0, 0, 0))
+        state, metrics_updates, _ = vmap_step_fn(params, input_batch_graphs, target_batch_graphs, rng)
+        
+        # Average metrics and handle potential NaNs.
+        metrics_update = jax.tree_util.tree_map(lambda x: x.mean(), metrics_updates)
+        if jnp.isnan(metrics_update.loss.total):
+            # TODO is it ok to raise the prune even if the pruner doesn't say should prune? 
+            logging.warning(f'loss is nan for step {step} (in epoch {epoch})')
+            if trial:
+                raise optuna.TrialPruned()
+        
+        return state, metrics_update
+    
+    num_batches = len(input_data[0])
+    batch_rng_keys = jax.random.split(rng, num_batches)    # each batch gets a rng key
+
     for epoch in range(init_epoch, config.epochs):
+        state, metrics_update = batched_train_step(
+            state=state,
+            input_batch_graphs=input_data,
+            target_batch_graphs=target_data,
+            rng=batch_rng_keys,
+        )
+        # Update metrics.
+        if train_metrics is None:
+            train_metrics = metrics_update
+        else:
+            train_metrics = train_metrics.merge(metrics_update)
 
-        # iterate over data
-        # right now we don't have batching so we just loop over individual windows in the dataset
-        # NOTE: GIRL WE HAVE BATCHING NOW!
-        for (input_batch_graphs, target_batch_graphs) in zip(
-            input_data, target_data):
-            # Split PRNG key, to ensure different 'randomness' for every step.
-            rng, dropout_rng = jax.random.split(rng)
+        # Quick indication that training is happening.
+        # in this case, each "step" will be referring to the epoch of training
+        logging.log_first_n(logging.INFO, 'Finished training step %d.', 10, step)
+        for hook in hooks:
+            hook(step)
 
-            # Perform one step of training.
-            with jax.profiler.StepTraceAnnotation('train', step_num=step):
-                # graphs = jax.tree_util.tree_map(np.asarray, next(train_iter))
-                state, metrics_update, _ = train_step(
-                    state=state, 
-                    n_rollout_steps=n_rollout_steps, 
-                    input_batch_graphs=input_batch_graphs, 
-                    target_batch_graphs=target_batch_graphs,
-                    rngs={'dropout': dropout_rng},
-                )
-                if jnp.isnan(metrics_update.loss.total):
-                    # TODO is it ok to raise the prune even if the pruner doesn't say should prune? 
-                    logging.warning(f'loss is nan for step {step} (in epoch {epoch})')
-                    if trial:
-                        raise optuna.TrialPruned()
-
-                # Update metrics.
-                if train_metrics is None:
-                    train_metrics = metrics_update
-                else:
-                    train_metrics = train_metrics.merge(metrics_update)
-
-            # Quick indication that training is happening.
-            logging.log_first_n(logging.INFO, 'Finished training step %d.', 10, step)
-            for hook in hooks:
-                hook(step)
-
-            step += 1
+        step += 1
 
         # epoch is 0-indexed 
         is_last_epoch = (epoch == config.epochs - 1) 

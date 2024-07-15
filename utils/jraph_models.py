@@ -116,8 +116,8 @@ class MLPBlock(nn.Module):
             update_global_fn=update_global_fn,
         )
 
-        print("input graph type:", type(input_graph))
-        print(input_graph)
+        # print("input graph type:", type(input_graph))
+        # print(input_graph)
         processed_graphs = graph_net(input_graph)
         # revert edge features to their original values
         # we want the edges to be encoded/processed by the update_edge_fn internally as part of the processing for the node features, but we only use the encoded edges internally and don't want it to affect the actual graph structure of the data because we know that it is fixed 

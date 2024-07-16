@@ -31,7 +31,6 @@ class MLP(nn.Module):
     dropout_rate: float = 0
     deterministic: bool = True
     activation: Callable[[jnp.ndarray], jnp.ndarray] = nn.relu
-    # TODO: would be nice if we could set a custom name for the module 
 
     @nn.compact
     def __call__(self, inputs):
@@ -61,8 +60,8 @@ class MLPBlock(nn.Module):
     deterministic: bool = True
     randvar: bool = False
     activation: Callable[[jnp.ndarray], jnp.ndarray] = nn.relu
-    edge_features: Sequence[int] = (4, 8) # the last feature size will be the number of features that the graph predicts
-    node_features: Sequence[int] = (32, 2)
+    edge_features: Sequence[int] = (4, 8) 
+    node_features: Sequence[int] = (32, 2) # the last feature size will be the number of features that the graph predicts
     global_features: Sequence[int] = None
     
 
@@ -179,7 +178,6 @@ class MLPGraphNetwork(nn.Module):
             )
             for _ in range(self.n_blocks):
                 blocks.append(shared_block)
-                # TODO: i have no idea if this will actually work i.e. will it be recurrent or not. would need to check size of params to verify
         else:
             for _ in range(self.n_blocks):
                 blocks.append(MLPBlock(

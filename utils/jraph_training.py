@@ -94,7 +94,7 @@ def create_optimizer(
 def create_dataset(    
     config: ml_collections.ConfigDict,
 ) -> Dict[str, Dict[str, Iterable[jraph.GraphsTuple]]]:
-    windows_dataset, batched_dataset = get_lorenz_graph_tuples(
+    dataset = get_lorenz_graph_tuples(
         n_samples=config.n_samples,
         input_steps=config.input_steps,
         output_delay=config.output_delay,
@@ -113,10 +113,9 @@ def create_dataset(
         h=config.h,
         seed=config.seed,
         normalize=config.normalize,
-        fully_connected_edges=config.fully_connected_edges,
-        batch_size=config.batch_size)
+        fully_connected_edges=config.fully_connected_edges)
 
-    return windows_dataset, batched_dataset
+    return dataset
 
 
 # def unbatch_i(batched_graph, i):
@@ -155,15 +154,8 @@ def rollout_loss(state: train_state.TrainState,
     """
     # TODO: not urgent, but this could be refactored to call the rollout function
     # TODO: theoretically n_rollout_steps can be eliminated and we just base the rollout on the size of the target_graphs list. however, for now we are passing in n_rollout_steps because i don't know how else we can do the jax jit with argnames 
-    # print("blank", len(input_window_graphs))
-    # print("[0]", len(input_window_graphs[0]))
-    # print("[0][0]", len(input_window_graphs[0][0]))
-    # print(type(input_window_graphs))
-    # print(input_window_graphs)
-    # print(input_window_graphs[0])
-
     assert n_rollout_steps > 0
-    # assert len(target_window_graphs[0][0]) == n_rollout_steps, (len(target_window_graphs[0]), n_rollout_steps)
+    assert len(target_window_graphs) == n_rollout_steps, (len(target_window_graphs), n_rollout_steps)
 
     curr_input_window_graphs = input_window_graphs
     pred_nodes = []
@@ -211,6 +203,7 @@ def rollout_loss(state: train_state.TrainState,
         x1_total_loss += x1_loss
         x2_total_loss += x2_loss
 
+
     x1_avg_loss = x1_total_loss / n_rollout_steps
     x2_avg_loss = x2_total_loss / n_rollout_steps
 
@@ -255,7 +248,7 @@ def rollout_metric_suite(
         for metric in metric_funcs:
             metric_val = metric(targets=targets, preds=preds)
             metric_totals[metric.__name__.lower()] += metric_val
-
+    
         pred_nodes.append(preds) # Side-effects aren't allowed in JAX-transformed functions, and appending to a list is a side effect ??
 
     # get metrics averaged over rollout 
@@ -335,8 +328,11 @@ class TrainMetrics(metrics.Collection):
 def train_step_fn(
     state: train_state.TrainState,
     n_rollout_steps: int,
-    input_batch_graphs: Iterable[jraph.GraphsTuple],
-    target_batch_graphs: Iterable[jraph.GraphsTuple], 
+    input_window_graphs: Iterable[jraph.GraphsTuple],
+    target_window_graphs: Iterable[jraph.GraphsTuple],
+    # TODO: update once batched rollout is fixed
+    # batch_input_graphs: Iterable[jraph.GraphsTuple], 
+    # batch_target_graphs: Iterable[Iterable[jraph.GraphsTuple]], 
     rngs: Dict[str, jnp.ndarray],
 ) -> Tuple[train_state.TrainState, metrics.Collection, jnp.ndarray]:
     """ Performs one update step over the current batch of graphs.
@@ -356,49 +352,32 @@ def train_step_fn(
         #     indicates the number of rollout steps that should be performed
         rngs (dict): rngs where the key of the dict denotes the rng use 
     """
+    assert n_rollout_steps > 0
+    assert len(target_window_graphs) == n_rollout_steps, (len(target_window_graphs), n_rollout_steps)
 
-    def loss_fn(params, input_batch_graphs, target_batch_graphs):
+    def loss_fn(params, input_window_graphs, target_window_graphs):
         curr_state = state.replace(params=params) # create a new state object so that we can pass the whole thing into the one_step_loss function. we do this so that we can keep track of the original state's apply_fn() and a custom param together (theoretically the param argument in this function doesn't need to be the same as the default state's param)
 
-        batch_size = len(input_batch_graphs) # arbitrarily chosen
-        print(batch_size)
-        # initialize storage for batch data
-        batch_losses = jnp.zeros(batch_size)
-        batch_x1_losses = jnp.zeros(batch_size)
-        batch_x2_losses = jnp.zeros(batch_size)
-        #batch_pred_nodes = jnp.zeros(num_batches)
-
-        for i in range(batch_size):
-            # compute loss by window
-            window_x1_loss, window_x2_loss, _ = rollout_loss(
-                state=curr_state, input_window_graphs=input_batch_graphs[i], 
-                target_window_graphs=target_batch_graphs[i], n_rollout_steps=n_rollout_steps, 
-                rngs=rngs)
-            window_total_loss = window_x1_loss + window_x2_loss
-
-            # add window values to jnp list of losses
-            batch_losses = batch_losses.at[i].set(window_total_loss)
-            batch_x1_losses = batch_x1_losses.at[i].set(window_x1_loss)
-            batch_x2_losses = batch_x2_losses.at[i].set(window_x2_loss)
-            #batch_pred_nodes = batch_pred_nodes.at[i].set(window_pred_nodes)
+        # Compute loss.
+        x1_loss, x2_loss, pred_nodes = rollout_loss(
+           state=curr_state, input_window_graphs=input_window_graphs, 
+           target_window_graphs=target_window_graphs, n_rollout_steps=n_rollout_steps, 
+           rngs=rngs)
         
-        # average metrics for batch
-        total_loss = jnp.mean(batch_losses)
-        total_x1_loss = jnp.mean(batch_x1_losses)
-        total_x2_loss = jnp.mean(batch_x2_losses)
-
-        loss_metrics = {'loss': total_loss, 'x1_loss': total_x1_loss, 'x2_loss': total_x2_loss}
-        return total_loss, (loss_metrics)
-
+        total_loss = x1_loss + x2_loss
+        loss_metrics = {'loss': total_loss, 'x1_loss': x1_loss, 'x2_loss': x2_loss}
+        return total_loss, (loss_metrics, pred_nodes)
+        # TODO trace where rngs is used, this is unclear. dropout? 
+    
     grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
-    (loss, (loss_metrics)), grads = grad_fn(state.params, input_batch_graphs, target_batch_graphs)
+    (loss, (loss_metrics, pred_nodes)), grads = grad_fn(state.params, input_window_graphs, target_window_graphs)
     state = state.apply_gradients(grads=grads) # update params in the state 
 
     metrics_update = TrainMetrics.single_from_model_output(loss=loss,
                                                            x1_loss=loss_metrics['x1_loss'],
                                                            x2_loss=loss_metrics['x2_loss'])
 
-    return state, metrics_update
+    return state, metrics_update, pred_nodes
 
 train_step = jax.jit(train_step_fn, static_argnames=["n_rollout_steps"])
 
@@ -406,83 +385,59 @@ train_step = jax.jit(train_step_fn, static_argnames=["n_rollout_steps"])
 def evaluate_step_metric_suite_fn(
     state: train_state.TrainState,
     n_rollout_steps: int,
-    input_batch_graphs: Iterable[jraph.GraphsTuple],
-    target_batch_graphs: Iterable[jraph.GraphsTuple],
+    input_window_graphs: Iterable[jraph.GraphsTuple],
+    target_window_graphs: Iterable[jraph.GraphsTuple],
 ) -> Tuple[metrics.Collection, jnp.ndarray]:
     """Computes metrics over a set of graphs."""
-    metric_funcs = [MSE, MB, ME, RMSE, CRMSE, NMB, NME, FB, FE, R, R2, D]
-    # computes the metrics 
-    def compute_metrics(input_window_graphs, target_window_graphs):
-        metric_avg, pred_nodes = rollout_metric_suite(
-            metric_funcs=metric_funcs,
-            state=state, 
-            input_window_graphs=input_window_graphs, 
-            target_window_graphs=target_window_graphs, 
-            n_rollout_steps=n_rollout_steps, rngs=None)
-        return metric_avg, pred_nodes
-    
-    batch_metrics, pred_nodes = jax.vmap(lambda x, y: compute_metrics(x, y), in_axes=[0,0])(input_batch_graphs, target_batch_graphs)
-    batch_metrics_avg = {}
-    for metric in metric_funcs:
-        key = metric.__name__.lower()
-        batch_metrics_avg[key] = jnp.mean(batch_metrics[key])
+
+    # Get node predictions and loss 
+    metric_avg, pred_nodes = rollout_metric_suite(
+        metric_funcs=[MSE, MB, ME, RMSE, CRMSE, NMB, NME, FB, FE, R, R2, D], 
+        state=state, 
+        input_window_graphs=input_window_graphs, 
+        target_window_graphs=target_window_graphs, 
+        n_rollout_steps=n_rollout_steps, rngs=None,
+        )
 
     eval_metrics_dict = EvalMetricsSuite.single_from_model_output(
-        mse = batch_metrics_avg["mse"],
-        mb = batch_metrics_avg["mb"],
-        me = batch_metrics_avg["me"],
-        rmse = batch_metrics_avg["rmse"],
-        crmse = batch_metrics_avg["crmse"],
-        nmb = batch_metrics_avg["nmb"],
-        nme = batch_metrics_avg["nme"],
-        fb = batch_metrics_avg["fb"],
-        fe = batch_metrics_avg["fe"],
-        r = batch_metrics_avg["r"],
-        r2 = batch_metrics_avg["r2"],
-        d = batch_metrics_avg["d"],
+        mse = metric_avg["mse"],
+        mb = metric_avg["mb"],
+        me = metric_avg["me"],
+        rmse = metric_avg["rmse"],
+        crmse = metric_avg["crmse"],
+        nmb = metric_avg["nmb"],
+        nme = metric_avg["nme"],
+        fb = metric_avg["fb"],
+        fe = metric_avg["fe"],
+        r = metric_avg["r"],
+        r2 = metric_avg["r2"],
+        d = metric_avg["d"],
+        #pearson = metric_avg["pearson"],
     ) 
+
     return eval_metrics_dict, pred_nodes
 
 evaluate_step_metric_suite = jax.jit(evaluate_step_metric_suite_fn, static_argnames=["n_rollout_steps"])
 
-# each step contains a batch
 def evaluate_step_fn(
     state: train_state.TrainState,
     n_rollout_steps: int,
-    input_batch_graphs: Iterable[jraph.GraphsTuple],
-    target_batch_graphs: Iterable[jraph.GraphsTuple],
+    input_window_graphs: Iterable[jraph.GraphsTuple],
+    target_window_graphs: Iterable[jraph.GraphsTuple],
 ) -> Tuple[metrics.Collection, jnp.ndarray]:
     """Computes metrics over a set of graphs."""
 
-    batch_size = len(input_batch_graphs) # arbitrarily chosen
-    # initialize storage for batch data
-    batch_losses = jnp.zeros(batch_size)
-    batch_x1_losses = jnp.zeros(batch_size)
-    batch_x2_losses = jnp.zeros(batch_size)
-    for i in range(batch_size):
-        # compute loss by window
-        window_x1_loss, window_x2_loss, _ = rollout_loss(
-            state=state, input_window_graphs=input_batch_graphs[i], 
-            target_window_graphs=target_batch_graphs[i], n_rollout_steps=n_rollout_steps, 
-            rngs=None)
-        window_total_loss = window_x1_loss + window_x2_loss
+    # Get node predictions and loss 
 
-        # add window values to jnp list of losses
-        batch_losses = batch_losses.at[i].set(window_total_loss)
-        batch_x1_losses = batch_x1_losses.at[i].set(window_x1_loss)
-        batch_x2_losses = batch_x2_losses.at[i].set(window_x2_loss)
-        #batch_pred_nodes = batch_pred_nodes.at[i].set(window_pred_nodes)
+    x1_loss, x2_loss, pred_nodes = rollout_loss(state=state, 
+                                    input_window_graphs=input_window_graphs, 
+                                    target_window_graphs=target_window_graphs, 
+                                    n_rollout_steps=n_rollout_steps, rngs=None)
     
-    # this iterates over the windows in the batch
-    total_loss = jnp.mean(batch_losses)
-    average_x1_loss = jnp.mean(batch_x1_losses)
-    average_x2_loss = jnp.mean(batch_x2_losses)
+    total_loss = x1_loss + x2_loss
+    eval_metrics = EvalMetrics.single_from_model_output(loss=total_loss)
 
-    eval_metrics = EvalMetrics.single_from_model_output(loss=total_loss,
-                                                        x1_loss=average_x1_loss,
-                                                        x2_loss=average_x2_loss)
-
-    return eval_metrics
+    return eval_metrics, pred_nodes
 
 evaluate_step = jax.jit(evaluate_step_fn, static_argnames=["n_rollout_steps"])
 
@@ -495,7 +450,6 @@ def evaluate_model(
     all_metrics: bool = False,
 ) -> Dict[str, metrics.Collection]:
     """Evaluates the model on metrics over the specified splits (i.e. modes)."""
-    parameter_overview.log_parameter_overview(state.params) # logs to logging.info
 
     # Loop over each split independently.
     eval_metrics_dict = {}
@@ -511,28 +465,21 @@ def evaluate_model(
         else: # just MSE 
             eval_fn = evaluate_step
 
-        def batched_eval_step(state, input_batch_graphs, target_batch_graphs):
-            def batch_eval_fn(state, input_graphs, target_graphs):
-                return eval_fn(
-                    state=state,
-                    n_rollout_steps=n_rollout_steps,
-                    input_batch_graphs=input_graphs,
-                    target_batch_graphs=target_graphs)
-        
-            # Vectorize batched_step_fn over batches.
-            vmap_step_fn = jax.vmap(batch_eval_fn, in_axes=(None, 0, 0), out_axes=0)
-            split_metrics_update = vmap_step_fn(state, input_batch_graphs, target_batch_graphs)
-            
-            # Average metrics
-            split_metrics_update = jax.tree_util.tree_map(lambda x: x.mean(), split_metrics_update)
-        
-        split_metrics_update = batched_eval_step(state, input_data, target_data)
+        # loop over individual windows in the dataset 
+        for (input_window_graphs, target_window_graphs) in zip(
+            input_data, target_data):
+            split_metrics_update, _ = eval_fn(
+                state=state, 
+                n_rollout_steps=n_rollout_steps, 
+                input_window_graphs=input_window_graphs, 
+                target_window_graphs=target_window_graphs,
+                )
 
-        # Update metrics.
-        if split_metrics is None:
-            split_metrics = split_metrics_update
-        else:
-            split_metrics = split_metrics.merge(split_metrics_update)
+            # Update metrics.
+            if split_metrics is None:
+                split_metrics = split_metrics_update
+            else:
+                split_metrics = split_metrics.merge(split_metrics_update)
         
         eval_metrics_dict[split] = split_metrics
 
@@ -557,16 +504,15 @@ def train_and_evaluate(
     """
     # Get datsets. 
     logging.info('Obtaining datasets.')
-    window_datasets, batched_datasets = create_dataset(config)
+    datasets = create_dataset(config)
 
     return train_and_evaluate_with_data(
-        config=config, workdir=workdir, window_datasets=window_datasets, batched_datasets=batched_datasets, trial=trial)
+        config=config, workdir=workdir, datasets=datasets, trial=trial)
  
 
 def train_and_evaluate_with_data(
     config: ml_collections.ConfigDict, workdir: str, 
-    window_datasets: Dict[str, Dict[str, Iterable[jraph.GraphsTuple]]],
-    batched_datasets,
+    datasets: Dict[str, Dict[str, Iterable[jraph.GraphsTuple]]], 
     trial: Optional[optuna.trial.Trial] = None,
 ) -> Tuple[train_state.TrainState, TrainMetrics, EvalMetrics]:
     """Execute model training and evaluation loop.
@@ -589,7 +535,7 @@ def train_and_evaluate_with_data(
     writer.write_hparams(config.to_dict())
 
     # Get datasets, organized by split.
-    train_set = batched_datasets['train']
+    train_set = datasets['train']
     input_data = train_set['inputs']
     target_data = train_set['targets']
     n_rollout_steps = config.output_steps
@@ -598,8 +544,7 @@ def train_and_evaluate_with_data(
     logging.info('Initializing network.')
     rng = jax.random.key(0)
     rng, init_rng = jax.random.split(rng)
-    # inintialize data with the window dataset
-    sample_input_window = window_datasets['train']['inputs'][0]
+    sample_input_window = input_data[0]
     init_net = create_model(config, deterministic=True)
     params = jax.jit(init_net.init)(init_rng, sample_input_window)
     parameter_overview.log_parameter_overview(params) # logs to logging.info
@@ -620,7 +565,7 @@ def train_and_evaluate_with_data(
                                  max_to_keep=config.max_checkpts_to_keep)
     state = ckpt.restore_or_initialize(state)
     initial_step = int(state.step) # state.step is 0-indexed 
-    init_epoch = initial_step // len(input_data[0]) # 0-indexed 
+    init_epoch = initial_step // len(input_data) # 0-indexed 
 
     # Create the evaluation state, corresponding to a deterministic model.
     eval_net = create_model(config, deterministic=True)
@@ -643,57 +588,48 @@ def train_and_evaluate_with_data(
     # Begin training loop.
     logging.info('Starting training.')
     train_metrics = None
+    # for step in range(initial_step, num_train_steps + 1):
+        # epoch = step % len(train_set['inputs'])
     
     # note step is 0-indexed 
+    epoch_losses = []
     step = initial_step
-
-    def batched_train_step(state, input_batch_graphs, target_batch_graphs, rng):
-        def batch_step_fn(state, input_graphs, target_graphs, rng):
-            return train_step(
-                state=state,
-                n_rollout_steps=n_rollout_steps,
-                input_batch_graphs=input_graphs,
-                target_batch_graphs=target_graphs,
-                rngs={'dropout': rng},
-            )
-        
-        # Vectorize batched_step_fn over batches.
-        vmap_step_fn = jax.vmap(batch_step_fn, in_axes=(None, 0, 0, 0), out_axes=(0, 0))
-        state, metrics_updates = vmap_step_fn(state, input_batch_graphs, target_batch_graphs, rng)
-        
-        # Average metrics and handle potential NaNs.
-        metrics_update = jax.tree_util.tree_map(lambda x: x.mean(), metrics_updates)
-        if jnp.isnan(metrics_update.loss.total):
-            # TODO is it ok to raise the prune even if the pruner doesn't say should prune? 
-            logging.warning(f'loss is nan for step {step} (in epoch {epoch})')
-            if trial:
-                raise optuna.TrialPruned()
-        
-        return state, metrics_update
-    
-    num_batches = len(input_data[0][0][0])
-    batch_rng_keys = jax.random.split(rng, num_batches)    # each batch gets a rng key
-
     for epoch in range(init_epoch, config.epochs):
-        state, metrics_update = batched_train_step(
-            state=state,
-            input_batch_graphs=input_data,
-            target_batch_graphs=target_data,
-            rng=batch_rng_keys,
-        )
-        # Update metrics.
-        if train_metrics is None:
-            train_metrics = metrics_update
-        else:
-            train_metrics = train_metrics.merge(metrics_update)
+        # iterate over data
+        # right now we don't have batching so we just loop over individual windows in the dataset
+        for (input_window_graphs, target_window_graphs) in zip(
+            input_data, target_data):
+            # Split PRNG key, to ensure different 'randomness' for every step.
+            rng, dropout_rng = jax.random.split(rng)
 
-        # Quick indication that training is happening.
-        # in this case, each "step" will be referring to the epoch of training
-        logging.log_first_n(logging.INFO, 'Finished training step %d.', 10, step)
-        for hook in hooks:
-            hook(step)
+            # Perform one step of training.
+            with jax.profiler.StepTraceAnnotation('train', step_num=step):
+                # graphs = jax.tree_util.tree_map(np.asarray, next(train_iter))
+                state, metrics_update, _ = train_step(
+                    state=state, 
+                    n_rollout_steps=n_rollout_steps, 
+                    input_window_graphs=input_window_graphs, 
+                    target_window_graphs=target_window_graphs, 
+                    rngs={'dropout': dropout_rng},
+                )
+                if jnp.isnan(metrics_update.loss.total):
+                    # TODO is it ok to raise the prune even if the pruner doesn't say should prune? 
+                    logging.warning(f'loss is nan for step {step} (in epoch {epoch})')
+                    if trial:
+                        raise optuna.TrialPruned()
 
-        step += 1
+                # Update metrics.
+                if train_metrics is None:
+                    train_metrics = metrics_update
+                else:
+                    train_metrics = train_metrics.merge(metrics_update)
+
+            # Quick indication that training is happening.
+            logging.log_first_n(logging.INFO, 'Finished training step %d.', 10, step)
+            for hook in hooks:
+                hook(step)
+
+            step += 1
 
         # epoch is 0-indexed 
         is_last_epoch = (epoch == config.epochs - 1) 
@@ -706,36 +642,39 @@ def train_and_evaluate_with_data(
             train_metrics = None
 
         # Evaluate on validation and test splits, if required.
-        # if epoch % config.eval_every_epochs == 0 or is_last_epoch:
-        #     eval_state = eval_state.replace(params=state.params)
+        if epoch % config.eval_every_epochs == 0 or is_last_epoch:
+            eval_state = eval_state.replace(params=state.params)
 
-        #     splits = ['val', 'test']
-        #     with report_progress.timed('eval'):
-        #         eval_metrics_dict = evaluate_model(
-        #             state=eval_state, 
-        #             n_rollout_steps=n_rollout_steps, 
-        #             datasets=batched_datasets, 
-        #             splits=splits,
-        #             all_metrics=eval_all_metrics,
-        #         )
-        #     for split in splits:
-        #         writer.write_scalars(
-        #             epoch, add_prefix_to_keys(eval_metrics_dict[split].compute(), split)
-        #         )
+            splits = ['val', 'test']
+            with report_progress.timed('eval'):
+                eval_metrics_dict = evaluate_model(
+                    state=eval_state, 
+                    n_rollout_steps=n_rollout_steps, 
+                    datasets=datasets, 
+                    splits=splits,
+                    all_metrics=eval_all_metrics,
+                )
+            for split in splits:
+                writer.write_scalars(
+                    epoch, add_prefix_to_keys(eval_metrics_dict[split].compute(), split)
+                )
 
-        #     # prune hyperparameter tuning, if enabled 
-        #     if trial:
-        #         avg_val_loss = eval_metrics_dict['val'].compute()['loss']
-        #         trial.report(value=avg_val_loss, step=epoch)
-        #         if trial.should_prune():
-        #             logging.warning(f"pruning trial with avg val loss {avg_val_loss} after epoch {epoch}")
-        #             raise optuna.TrialPruned()
+            avg_epoch_loss = eval_metrics_dict['val'].compute()['loss']
+            epoch_losses.append(avg_epoch_loss)
 
-        # # Checkpoint model, if required.
-        # if epoch % config.checkpoint_every_epochs == 0 or is_last_epoch:
-        #     with report_progress.timed('checkpoint'):
-        #         ckpt.save(state)
-    return state, train_metrics #, eval_metrics_dict
+            # prune hyperparameter tuning, if enabled 
+            if trial:
+                avg_val_loss = eval_metrics_dict['val'].compute()['loss']
+                trial.report(value=avg_val_loss, step=epoch)
+                if trial.should_prune():
+                    logging.warning(f"pruning trial with avg val loss {avg_val_loss} after epoch {epoch}")
+                    raise optuna.TrialPruned()
+
+        # Checkpoint model, if required.
+        if epoch % config.checkpoint_every_epochs == 0 or is_last_epoch:
+            with report_progress.timed('checkpoint'):
+                ckpt.save(state)
+    return state, train_metrics, eval_metrics_dict, epoch_losses
 
 
 # define loss functions 
@@ -828,6 +767,3 @@ def D(targets, preds):
     frac = jnp.true_divide(jnp.sum(pred_minus_test_squared), jnp.sum(denom))
     d = jnp.subtract(1, frac)
     return d
-
-#def pearson(targets, preds):
-#    return jax.scipy.stats.pearsonr(x=targets, y=preds)

@@ -187,49 +187,7 @@ def get_lorenz_graph_tuples(n_samples,
     if normalize:
         graph_tuple_dict = normalize_lorenz96_2coupled(graph_tuple_dict)
 
-    def batch_graphs(inputs, targets, num_windows, batch_size):
-        """
-        batches graphs into size of batch_size (WILL IMRPOVE DOCSTRING LATER)
-
-        arguments: graphs: list of graphtuples, ie graph_tuple_dict[split]['inputs']
-        """
-        num_batches = (num_windows + batch_size - 1) // batch_size  # Ensure rounding up to capture all data
-        
-        batched_inputs = []
-        batched_targets = []
-        for i in range(num_batches):
-            start = i * batch_size
-            end = min((i + 1) * batch_size, num_windows)  # If we run out of data before batch size, just go to end of data
-            
-            # Batch the graphs for each window separately
-            # TODO: maybe figure out way to avoid this if we only have 1 timestep per window?
-            current_batch_inputs = inputs[start:end]
-            current_batch_targets = targets[start:end]
-
-            # all batches will be the same size EXCEPT the last one,
-            # if we ran out of windows before the batch size. therefore, we need to pad the last graph
-            if (end - start != batch_size):
-                print("made it to the last graph")
-                break
-            
-            batched_inputs.append(current_batch_inputs)
-            batched_targets.append(current_batch_targets)
-
-        # stacking the batched graphs in order to be used in jax.vmap()
-        stacked_batched_inputs = jax.tree_map(lambda *args: jnp.stack(args), *batched_inputs)
-        stacked_batched_targets = jax.tree_map(lambda *args: jnp.stack(args), *batched_targets)
-
-        return stacked_batched_inputs, stacked_batched_targets      
-
-    batched_graph_tuple_dict = {}
-    for split in ['train', 'val', 'test']:
-        inputs = graph_tuple_dict[split]['inputs']
-        targets = graph_tuple_dict[split]['targets']
-        num_windows = len(inputs) # chosen arbitrarily
-        split_input_batch, split_target_batch = batch_graphs(inputs, targets, num_windows, batch_size)
-        batched_graph_tuple_dict[split] = {'inputs': split_input_batch, 'targets': split_target_batch}
-
-    return graph_tuple_dict, batched_graph_tuple_dict
+    return graph_tuple_dict
 
 
 @partial(jax.jit, static_argnames=["K", "fully_connected_edges"])
@@ -246,7 +204,14 @@ def timestep_to_graphstuple(data, K, fully_connected_edges):
     senders = []
     edge_fts = []
 
-    if fully_connected_edges:
+    # if we are given None for fully_connected_edges, this means that we have NO egdes. this is largely for experimentation purposes
+    if fully_connected_edges == None:
+        n_edges = K # each node has one edge pointing to itself
+        senders = jnp.arange(K, dtype=jnp.int32) # self-loop, index i sends to index i
+        receivers = jnp.arange(K, dtype=jnp.int32)
+        edge_fts = jnp.zeros((K, 1))  # dummy edge features
+
+    elif fully_connected_edges:
         n_edges = K * K
     # if the graph is fully connected, then each edge feature indicates the shortest distance (and direction) between the sender and receiver node. 
         # since there are 35 nodes besides the sender node, we say that the nodes are split evenly between the 17 to the "right"/positive and 17 to the "left"/negative side of the sender node, with the last node arbitrarily placed on the right side of the sender. 
@@ -258,11 +223,6 @@ def timestep_to_graphstuple(data, K, fully_connected_edges):
                 if dist < -17: dist += 36 # wrap around 
                 elif dist > 18: dist -= 36 # wrap around 
                 edge_fts += [[dist]]
-
-                # ranged from -35 to +35 
-
-                # we want the +35 to be -1 and -35 to be +1
-                # TODO PICK UP HERE 
 
     else: # only have edges to the nearest and second nearest neighbors (5 total)
         n_edges = K * 5

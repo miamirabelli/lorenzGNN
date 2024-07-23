@@ -32,9 +32,7 @@ def get_lorenz_graph_tuples(n_samples,
                             h=1,
                             seed=42,
                             normalize=False,
-                            fully_connected_edges=True,
-                            batch_size=32,
-                            ):
+                            fully_connected_edges=True):
     """ Generated data using Lorenz96 and splits data into train/val/test. 
 
         Args: 

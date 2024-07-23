@@ -24,8 +24,6 @@ def objective(trial, datasets):
     # create config 
     config = get_base_config()
 
-    # TODO replace these values during tuning 
-
     # Optimizer.
     config.optimizer = "adam"
     # config.optimizer = trial.suggest_categorical("optimizer", ["adam", "sgd"])
@@ -69,7 +67,7 @@ def objective(trial, datasets):
     workdir=os.path.join(CHECKPOINT_PATH, str(datetime.now()))
 
     # run training 
-    state, train_metrics, eval_metrics_dict = train_and_evaluate_with_data(config=config, workdir=workdir, datasets=datasets)
+    _, _, eval_metrics_dict, _ = train_and_evaluate_with_data(config=config, workdir=workdir, datasets=datasets, trial=trial)
     
     # retrieve and return val loss (MSE)
     print("eval_metrics_dict['val'].loss", eval_metrics_dict['val'].loss)
@@ -82,7 +80,7 @@ def get_data_config():
 
     config.n_samples=5000
     config.input_steps=1
-    config.output_delay=0 # predict 0 hours into the future
+    config.output_delay=8 # predict 0 hours into the future
     config.output_steps=4
     config.timestep_duration= 3
     config.sample_buffer=-1 * (config.input_steps + config.output_delay + config.output_steps - 1) # negative buffer so that our sample input are continuous (i.e. the first sample would overlap a bit with consecutive samples) 
@@ -99,7 +97,7 @@ def get_data_config():
     config.seed=42
     config.normalize=True
     config.fully_connected_edges=False
-    config.max_checkpts_to_keep=None # none means all
+    config.max_checkpts_to_keep=5 # none means all
 
     return config
 

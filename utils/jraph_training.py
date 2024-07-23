@@ -308,11 +308,11 @@ class EvalMetricsSuite(metrics.Collection):
     me: metrics.Average.from_output('me')
     rmse: metrics.Average.from_output('rmse')
     crmse: metrics.Average.from_output('crmse')
-    nmb: metrics.Average.from_output('nmb')
-    nme: metrics.Average.from_output('nme')
+    ##
     fb: metrics.Average.from_output('fb')
     fe: metrics.Average.from_output('fe')
     r: metrics.Average.from_output('r')
+    r2: metrics.Average.from_output('r2')
     d: metrics.Average.from_output('d')
     # the loss value is passed in as a named param. it can be either single step 
     # or rollout loss, and is chosen in the training step, so we do not need to 
@@ -363,8 +363,7 @@ def train_step_fn(
            state=curr_state, input_window_graphs=input_window_graphs, 
            target_window_graphs=target_window_graphs, n_rollout_steps=n_rollout_steps, 
            rngs=rngs)
-        
-        total_loss = x1_loss + x2_loss
+        total_loss = x1_loss + x2_loss # scaling x2 loss to try and capture dynamics better
         loss_metrics = {'loss': total_loss, 'x1_loss': x1_loss, 'x2_loss': x2_loss}
         return total_loss, (loss_metrics, pred_nodes)
         # TODO trace where rngs is used, this is unclear. dropout? 
@@ -392,7 +391,7 @@ def evaluate_step_metric_suite_fn(
 
     # Get node predictions and loss 
     metric_avg, pred_nodes = rollout_metric_suite(
-        metric_funcs=[MSE, MB, ME, RMSE, CRMSE, NMB, NME, FB, FE, R, R2, D], 
+        metric_funcs=[MSE, MB, ME, RMSE, CRMSE, FB, FE, R, R2, D], 
         state=state, 
         input_window_graphs=input_window_graphs, 
         target_window_graphs=target_window_graphs, 
@@ -405,8 +404,8 @@ def evaluate_step_metric_suite_fn(
         me = metric_avg["me"],
         rmse = metric_avg["rmse"],
         crmse = metric_avg["crmse"],
-        nmb = metric_avg["nmb"],
-        nme = metric_avg["nme"],
+        #nmb = metric_avg["nmb"],
+        #nme = metric_avg["nme"],
         fb = metric_avg["fb"],
         fe = metric_avg["fe"],
         r = metric_avg["r"],
@@ -434,7 +433,7 @@ def evaluate_step_fn(
                                     target_window_graphs=target_window_graphs, 
                                     n_rollout_steps=n_rollout_steps, rngs=None)
     
-    total_loss = x1_loss + x2_loss
+    total_loss = x1_loss + 2*x2_loss
     eval_metrics = EvalMetrics.single_from_model_output(loss=total_loss)
 
     return eval_metrics, pred_nodes
@@ -612,12 +611,10 @@ def train_and_evaluate_with_data(
                     target_window_graphs=target_window_graphs, 
                     rngs={'dropout': dropout_rng},
                 )
-                if jnp.isnan(metrics_update.loss.total):
-                    # TODO is it ok to raise the prune even if the pruner doesn't say should prune? 
+                if jnp.isnan(metrics_update.loss.total): 
                     logging.warning(f'loss is nan for step {step} (in epoch {epoch})')
                     if trial:
                         raise optuna.TrialPruned()
-
                 # Update metrics.
                 if train_metrics is None:
                     train_metrics = metrics_update

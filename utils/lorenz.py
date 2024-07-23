@@ -95,11 +95,11 @@ def lorenz96_2coupled(X, t, K, F, c, b, h):
     
     ######## first ##########
     # boundary conditions
-    dX_dt[0] = (X[1] - X[K - 2]) * X[K - 1] - X[0] - (h * c / b) * X[K]
-    dX_dt[1] = (X[2] - X[K - 1]) * X[0] - X[1] - (h * c / b) * X[K + 1]
+    dX_dt[0] = (X[1] - X[K - 2]) * X[K - 1] - X[0] - (h * c / b) * X[K] + F
+    dX_dt[1] = (X[2] - X[K - 1]) * X[0] - X[1] - (h * c / b) * X[K + 1] + F
     dX_dt[K -
           1] = (X[0] - X[K - 3]) * X[K - 2] - X[K -
-                                                1] - (h * c / b) * X[K - 1]
+                                                1] - (h * c / b) * X[K - 1] + F
     ######## second next #############
     # boundary conditions
     dX_dt[K + 0] = -c * b * (X[K + 2] - X[K + K - 1]) * X[K + 1] - c * X[K] + (
@@ -114,7 +114,7 @@ def lorenz96_2coupled(X, t, K, F, c, b, h):
     # Then the general case
     for i in range(2, K - 1):
         dX_dt[i] = (X[i + 1] - X[i - 2]) * X[i - 1] - X[i] - (h * c /
-                                                              b) * X[i + K]
+                                                              b) * X[i + K] + F
     # Return the state derivatives
     ######## second next #############################
     for i in range(K + 1, K + K - 2):
@@ -171,7 +171,7 @@ def run_lorenz96_2coupled(
 
     # Perturbation
     X0[random.randint(0, K) -
-       1] = X0[random.randint(0, K) - 1] + random.uniform(0, .01)
+       1] = X0[random.randint(0, K) - 1] + random.uniform(0.009, .01)
     
     full_steps = n_steps * 4  # quadrupling the number of steps to account for model spin-up
     simulation_duration = full_steps / resolution # number of all time units
@@ -180,6 +180,45 @@ def run_lorenz96_2coupled(
     logging.info('starting integration')
     X = odeint(lorenz96_2coupled, X0, full_time, args=(K, F, c, b, h), ixpr=True)
     X = X[(full_steps-n_steps):]  # removes the first n_steps from training data, accounting for model spin_up
+
+    # error checking: determine if generated data is properly integrated
+    X1_data = np.array([step[:K] for step in X])
+    X2_data = np.array([step[K:] for step in X])
+
+    X1_avg_max = np.mean([np.max(step) for step in X1_data])
+    X1_avg_min = np.mean([np.min(step) for step in X1_data])
+    X2_avg_max = np.mean([np.max(step) for step in X2_data])
+    X2_avg_min = np.mean([np.min(step) for step in X2_data])
+
+    flattened_X1_data = X1_data.flatten()
+    flattened_X2_data = X2_data.flatten()
+    
+    X1_std = np.std(flattened_X1_data)
+    X2_std = np.std(flattened_X1_data)
+
+    print("x1 max: ", np.max(flattened_X1_data))
+    print("x1 max threshold", X1_avg_max + 3 * X1_std)
+    print("x1 min: ", np.min(flattened_X1_data))
+    print("x1 min threshold", X1_avg_min - 3 * X1_std)
+    print("x2 max: ", np.max(flattened_X2_data))
+    print("x2 max threshold", X2_avg_max + 1.5 * X2_std)
+    print("x2 min: ", np.min(flattened_X2_data))
+    print("x2 min threshold", X2_avg_min - 1.5 * X2_std)
+
+    # Determine if we have any major spikes/outliers in our data.
+    # We will determine that something is a "spike" if it is:
+    # for X1: greater than mean + 3 * std, or less than mean - 3 * std.
+    # for X2: greater than mean - 1.5 * std, or less than mean - 1.5 * std. 
+    outlier = np.any((np.max(flattened_X1_data) > X1_avg_max + 3 * X1_std) | 
+                     (np.min(flattened_X1_data) < X1_avg_min - 3 * X1_std) |
+                     (np.max(flattened_X2_data) > X2_avg_max + 1.5 * X2_std) | 
+                     (np.min(flattened_X2_data) < X2_avg_min - 1.5 * X2_std)
+                     | (X1_avg_max-X1_avg_min == 0))
+    
+    if outlier:
+        print(outlier)
+        raise Exception(f"Seed {seed} failed to generate correctly-integrated data. Please try again with a different seed (for example, seed=42)")
+    
     t = np.arange(0.0, n_steps/resolution, 1/resolution) # cuts down time to only the non-spin up time
 
     return t, X, F, K, n_steps

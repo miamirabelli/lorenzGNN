@@ -5,7 +5,7 @@ tutorial*
 *.log
 outputs/*
 */outputs/*
-experiments/tuning/configs/*
+experiments/tuning/*
 data/tests/outputs
 *.npz
 

@@ -202,16 +202,11 @@ def timestep_to_graphstuple(data, K, fully_connected_edges):
     senders = []
     edge_fts = []
 
-    # if we are given None for fully_connected_edges, this means that we have NO egdes. this is largely for experimentation purposes
-    if fully_connected_edges == None:
-        n_edges = K # each node has one edge pointing to itself
-        senders = jnp.arange(K, dtype=jnp.int32) # self-loop, index i sends to index i
-        receivers = jnp.arange(K, dtype=jnp.int32)
-        edge_fts = jnp.zeros((K, 1))  # dummy edge features
-
-    elif fully_connected_edges:
+    # if we are given None for fully_connected_edges, this means that we want the edges to be FULLY CONNECTED.
+    # ie every node is connected to every other node, including itself.
+    if fully_connected_edges is None:
         n_edges = K * K
-    # if the graph is fully connected, then each edge feature indicates the shortest distance (and direction) between the sender and receiver node. 
+        # if the graph is fully connected, then each edge feature indicates the shortest distance (and direction) between the sender and receiver node. 
         # since there are 35 nodes besides the sender node, we say that the nodes are split evenly between the 17 to the "right"/positive and 17 to the "left"/negative side of the sender node, with the last node arbitrarily placed on the right side of the sender. 
         for i in range(K):
             for j in range(K):
@@ -222,7 +217,25 @@ def timestep_to_graphstuple(data, K, fully_connected_edges):
                 elif dist > 18: dist -= 36 # wrap around 
                 edge_fts += [[dist]]
 
-    else: # only have edges to the nearest and second nearest neighbors (5 total)
+    # if fully_connected_edges = 1, this means that we only want 1 edge per node: each node has one edge pointing to itself
+    elif fully_connected_edges == 1:
+        n_edges = K 
+        senders = jnp.arange(K, dtype=jnp.int32) # self-loop, index i sends to index i
+        receivers = jnp.arange(K, dtype=jnp.int32)
+        edge_fts = jnp.zeros((K, 1))  # dummy edge features
+
+    # each node has 3 edges: one connecting to itself, and two connecting to 1 node to the right & left
+    elif fully_connected_edges == 3:
+        n_edges = K * 3 
+        for i in range(K):
+            senders += [i] * 3
+            receivers += [i, (i + 1) % K, (i - 1) % K]
+            edge_fts += [
+                [0], # self edge
+                [1], # reciever is 1 node to the right
+                [-1]] # receiver is 1 node to the left
+       
+    elif fully_connected_edges == 5: # have edges to the nearest and second nearest neighbors (5 total)
         n_edges = K * 5
 
         for i in range(K):
@@ -236,6 +249,25 @@ def timestep_to_graphstuple(data, K, fully_connected_edges):
                 [2],  # receiver is 2 nodes to the right
                 [-1],  # receiver is 1 node to the left
                 [-2]  # receiver is 2 nodes to the left
+            ]
+    # have edges to the closest 7 nodes, including itself
+    elif fully_connected_edges == 7:
+        n_edges = K * 7
+
+        for i in range(K):
+            senders += [i] * 7
+            receivers += [i, (i + 1) % K, (i + 2) % K, (i + 3) % K,
+                           (i - 1) % K, (i - 2) % K, (i - 3) % K]
+            
+            # edge features = length + direction of edge
+            edge_fts += [
+                [0],  # self edge
+                [1],  # receiver is 1 node to the right
+                [2],
+                [3],
+                [-1],  # receiver is 1 node to the left
+                [-2],
+                [-3]
             ]
     
     return jraph.GraphsTuple(

@@ -615,6 +615,7 @@ def train_and_evaluate_with_data(
                     logging.warning(f'loss is nan for step {step} (in epoch {epoch})')
                     if trial:
                         raise optuna.TrialPruned()
+                    
                 # Update metrics.
                 if train_metrics is None:
                     train_metrics = metrics_update

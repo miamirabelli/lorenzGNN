@@ -142,9 +142,9 @@ def run_lorenz96_2coupled(
             F (float): Lorenz96 forcing constant. (K=36 and F=8 corresponds to 
                 an error-doubling time of 2.1 days, similar to the real 
                 atmosphere)
-            c (float): Lorenz96 time-scale ratio ?
-            b (float): Lorenz96 spatial-scale ratio ?
-            h (float): Lorenz96 coupling parameter ?
+            c (float): Lorenz96 time-scale ratio
+            b (float): Lorenz96 spatial-scale ratio
+            h (float): Lorenz96 coupling parameter
             n_steps (int): number of raw timesteps for which to run the ODE 
                 integration of the model (NOTE: this is distinct from the 
                 number of steps in the LorenzDataset/Wrapper object, which is 
@@ -196,27 +196,19 @@ def run_lorenz96_2coupled(
     X1_std = np.std(flattened_X1_data)
     X2_std = np.std(flattened_X1_data)
 
-    print("x1 max: ", np.max(flattened_X1_data))
-    print("x1 max threshold", X1_avg_max + 3 * X1_std)
-    print("x1 min: ", np.min(flattened_X1_data))
-    print("x1 min threshold", X1_avg_min - 3 * X1_std)
-    print("x2 max: ", np.max(flattened_X2_data))
-    print("x2 max threshold", X2_avg_max + 1.5 * X2_std)
-    print("x2 min: ", np.min(flattened_X2_data))
-    print("x2 min threshold", X2_avg_min - 1.5 * X2_std)
-
     # Determine if we have any major spikes/outliers in our data.
     # We will determine that something is a "spike" if it is:
     # for X1: greater than mean + 3 * std, or less than mean - 3 * std.
     # for X2: greater than mean - 1.5 * std, or less than mean - 1.5 * std. 
+    # There are stricter requirements for X2 because higher-frequency spikes likely led to difficulty in integration
     outlier = np.any((np.max(flattened_X1_data) > X1_avg_max + 3 * X1_std) | 
                      (np.min(flattened_X1_data) < X1_avg_min - 3 * X1_std) |
                      (np.max(flattened_X2_data) > X2_avg_max + 1.5 * X2_std) | 
-                     (np.min(flattened_X2_data) < X2_avg_min - 1.5 * X2_std)
-                     | (X1_avg_max-X1_avg_min == 0))
+                     (np.min(flattened_X2_data) < X2_avg_min - 1.5 * X2_std) |
+                     (X1_avg_max-X1_avg_min == 0) |
+                     (X2_avg_max-X2_avg_min == 0))
     
     if outlier:
-        print(outlier)
         raise Exception(f"Seed {seed} failed to generate correctly-integrated data. Please try again with a different seed (for example, seed=42)")
     
     t = np.arange(0.0, n_steps/resolution, 1/resolution) # cuts down time to only the non-spin up time

@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import random
 import matplotlib.pyplot as plt
-from scipy.integrate import odeint
+from scipy.integrate import solve_ivp
 from scipy.sparse import coo_matrix
 import jraph 
 import jax.numpy as jnp
@@ -178,7 +178,7 @@ def run_lorenz96_2coupled(
     full_time = np.arange(0.0, simulation_duration, 1 /resolution) # indices of all time steps
 
     logging.info('starting integration')
-    X = odeint(lorenz96_2coupled, X0, full_time, args=(K, F, c, b, h), ixpr=True)
+    X = solve_ivp(lorenz96_2coupled, full_time, X0, method="BDF", args=(K, F, c, b, h))
     X = X[(full_steps-n_steps):]  # removes the first n_steps from training data, accounting for model spin_up
 
     # error checking: determine if generated data is properly integrated

@@ -136,7 +136,7 @@ def get_best_trial_config(study):
     best_trial_config = dataset_config
 
     # Optimizer.
-    best_trial_config.optimizer = study.best_params['optimizer']
+    best_trial_config.optimizer = 'sgd' # 'study.best_params['optimizer']
     best_trial_config.learning_rate = study.best_params['learning_rate']
     if best_trial_config.optimizer == "sgd":
         best_trial_config.momentum = study.best_params['momentum']
@@ -152,10 +152,10 @@ def get_best_trial_config(study):
     best_trial_config.model = 'MLPGraphNetwork'
     best_trial_config.n_blocks = study.best_params['n_blocks']
     best_trial_config.share_params = False
-    best_trial_config.dropout_rate = study.best_params['dropout_rate']
+    best_trial_config.dropout_rate = 0.013287043114620523 #study.best_params['dropout_rate']
     best_trial_config.skip_connections = False # This was throwing a broadcast error in add_graphs_tuples_nodes when this was set to True
     best_trial_config.layer_norm = False # TODO perhaps we want to turn on later
-    best_trial_config.activation = study.best_params['activation']
+    best_trial_config.activation = 'relu' #study.best_params['activation']
 
     # choose the hidden layer feature size using powers of 2 
     best_trial_config.edge_features = (

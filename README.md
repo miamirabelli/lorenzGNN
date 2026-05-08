@@ -14,4 +14,7 @@
   ```
   pip install -r requirements.txt
   ```
-* now you are ready to roll! 
+
+## Data Paths
+* change all data paths to the path relevant to your computer
+  - look for variables like `DATA_DIRECTORY_PATH`, `data_path`, `CHECKPOINT_PATH` and replace their contents appropriately
